@@ -17,7 +17,7 @@ Sea Trip Planner（仮）
 - **UI**: MUI (Material UI) + Emotion
 - **バックエンド/DB**: Firebase (Firestore + Authentication)
 - **データ取得**: getDocs / getDoc（リアルタイム同期不要、CRUD後に手動refetch）
-- **デプロイ**: Vercel
+- **デプロイ**: Firebase Hosting
 - **パッケージマネージャ**: pnpm
 
 ### Firebase を選定した理由
@@ -520,7 +520,7 @@ src/
 ### Phase 4: 仕上げ
 - [x] レスポンシブ対応（モバイルファースト）
 - [x] デザイン調整（プロトタイプ `disney-sea-planner.jsx` 準拠）
-- [ ] Vercel デプロイ + Firebase 環境変数設定
+- [x] Firebase Hosting デプロイ + 環境変数設定
 - [ ] PWA 対応（nice to have）
 
 ---

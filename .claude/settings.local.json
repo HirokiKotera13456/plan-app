@@ -3,7 +3,10 @@
     "allow": [
       "Bash(pnpm add:*)",
       "Bash(npm install:*)",
-      "Bash(npx next:*)"
+      "Bash(npx next:*)",
+      "Bash(npx firebase:*)",
+      "Bash(npm run:)",
+      "Bash(rm:*)"
     ]
   }
 }

@@ -26,19 +26,23 @@ service cloud.firestore {
       }
 
       match /timeline/{itemId} {
-        allow read, write: if isTripMember(tripId);
+        allow read, update, delete: if isTripMember(tripId);
+        allow create: if request.auth != null;
       }
 
       match /checklist/{itemId} {
-        allow read, write: if isTripMember(tripId);
+        allow read, update, delete: if isTripMember(tripId);
+        allow create: if request.auth != null;
       }
 
       match /hotels/{hotelId} {
-        allow read, write: if isTripMember(tripId);
+        allow read, update, delete: if isTripMember(tripId);
+        allow create: if request.auth != null;
       }
 
       match /costs/{costId} {
-        allow read, write: if isTripMember(tripId);
+        allow read, update, delete: if isTripMember(tripId);
+        allow create: if request.auth != null;
       }
     }
   }
