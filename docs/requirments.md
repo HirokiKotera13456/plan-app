@@ -13,15 +13,16 @@ Sea Trip Planner（仮）
 - スマートフォンでの利用がメイン（レスポンシブ対応必須）
 
 ### 技術スタック
-- **フロントエンド**: Next.js (App Router) + TypeScript
-- **UI**: Tailwind CSS + shadcn/ui
+- **フロントエンド**: Next.js (Pages Router) + TypeScript
+- **UI**: MUI (Material UI) + Emotion
 - **バックエンド/DB**: Firebase (Firestore + Authentication)
+- **データ取得**: getDocs / getDoc（リアルタイム同期不要、CRUD後に手動refetch）
 - **デプロイ**: Vercel
 - **パッケージマネージャ**: pnpm
 
 ### Firebase を選定した理由
 - Firestore の NoSQL 構造により、スキーマ定義不要で柔軟にデータ構造を変更可能
-- `onSnapshot` によるリアルタイム同期が標準搭載で、追加設定不要
+- getDocs/getDoc でシンプルにデータ取得、CRUD操作後はrefetchで再取得
 - Firebase Authentication のセットアップが簡潔
 - 2人利用の小規模アプリなので、Firestore の無料枠内で十分運用可能
 
@@ -59,13 +60,13 @@ Sea Trip Planner（仮）
   - transport（移動）: 青系
   - attraction（遊び）: オレンジ系
   - meal（食事）: ピンク/コーラル系
-- **リアルタイム同期**: Firestore `onSnapshot` で2人の間で即座に反映
+- **データ同期**: CRUD操作後にrefetchで最新データを取得
 
 ### 2.4 チェックリスト機能（予約管理）
 
 #### 機能詳細
 - 予約が必要なもののみに絞ったチェックリスト
-- チェック状態のトグル（リアルタイム同期）
+- チェック状態のトグル（CRUD後refetch）
 - 担当者の割り当て（ドロップダウンでトリップ参加者から選択）
 - 進捗バー（完了数/全体数）
 - 項目の追加・編集・削除
@@ -193,7 +194,7 @@ trips/{tripId}
 ```
 
 ### 設計ポイント
-- **サブコレクション方式**: トリップ配下にすべてのデータをサブコレクションとして配置。セキュリティルールがシンプルになり、`onSnapshot` でコレクション単位のリアルタイム同期が自然にできる
+- **サブコレクション方式**: トリップ配下にすべてのデータをサブコレクションとして配置。セキュリティルールがシンプルになり、`getDocs`/`getDoc` でコレクション単位のデータ取得が容易
 - **memberIds 配列**: trips ドキュメントに `memberIds` を持たせることで、セキュリティルールで `request.auth.uid in resource.data.memberIds` の1行でアクセス制御可能
 - **hotels の prices**: サブコレクションではなく Map フィールドとして保持。ホテル1件あたりの日程数は少ないため、ドキュメント内に収めるほうが効率的
 - **sortOrder**: 並び替え用のフィールド。クエリで `orderBy("sortOrder")` を使用
@@ -298,66 +299,56 @@ NEXT_PUBLIC_FIREBASE_APP_ID=
 
 ---
 
-## 8. リアルタイム同期の実装パターン
+## 8. データ取得パターン（getDocs ベース）
 
 ### カスタムフック例: useTimeline
 ```typescript
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
-  collection, query, orderBy, onSnapshot,
+  collection, query, orderBy, getDocs,
   doc, addDoc, updateDoc, deleteDoc, Timestamp
 } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-
-type TimelineItem = {
-  id: string;
-  timeStart: string;
-  timeEnd: string;
-  title: string;
-  subtitle: string;
-  icon: string;
-  category: "transport" | "attraction" | "meal";
-  note: string;
-  isDone: boolean;
-  sortOrder: number;
-};
+import { db } from "@/src/lib/firebase";
+import { TimelineItem } from "@/src/lib/types";
 
 export function useTimeline(tripId: string) {
   const [items, setItems] = useState<TimelineItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const fetchItems = useCallback(async () => {
+    setLoading(true);
     const ref = collection(db, "trips", tripId, "timeline");
     const q = query(ref, orderBy("sortOrder"));
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as TimelineItem[];
-      setItems(data);
-      setLoading(false);
-    });
-
-    return () => unsubscribe(); // クリーンアップ
+    const snapshot = await getDocs(q);
+    const data = snapshot.docs.map((d) => ({
+      id: d.id,
+      ...d.data(),
+    })) as TimelineItem[];
+    setItems(data);
+    setLoading(false);
   }, [tripId]);
+
+  useEffect(() => { fetchItems(); }, [fetchItems]);
 
   const addItem = async (item: Omit<TimelineItem, "id">) => {
     const ref = collection(db, "trips", tripId, "timeline");
     await addDoc(ref, { ...item, createdAt: Timestamp.now(), updatedAt: Timestamp.now() });
+    await fetchItems(); // refetch
   };
 
   const updateItem = async (itemId: string, updates: Partial<TimelineItem>) => {
     const ref = doc(db, "trips", tripId, "timeline", itemId);
     await updateDoc(ref, { ...updates, updatedAt: Timestamp.now() });
+    await fetchItems(); // refetch
   };
 
   const deleteItem = async (itemId: string) => {
     const ref = doc(db, "trips", tripId, "timeline", itemId);
     await deleteDoc(ref);
+    await fetchItems(); // refetch
   };
 
-  return { items, loading, addItem, updateItem, deleteItem };
+  return { items, loading, addItem, updateItem, deleteItem, refetch: fetchItems };
 }
 ```
 
@@ -456,20 +447,17 @@ async function createTripWithSeedData(tripData, userId) {
 ## 10. プロジェクト構成
 
 ```
+pages/
+├── _app.tsx                        # ThemeProvider + AuthProvider
+├── _document.tsx                   # Google Fonts
+├── index.tsx                       # トリップ一覧
+├── login.tsx                       # 認証画面
+├── trip/
+│   └── [id].tsx                    # トリップ詳細（メイン画面）
+└── invite/
+    └── [code].tsx                  # 招待リンク受理
 src/
-├── app/
-│   ├── layout.tsx
-│   ├── page.tsx                    # トリップ一覧
-│   ├── login/
-│   │   └── page.tsx                # 認証画面
-│   ├── trip/
-│   │   └── [id]/
-│   │       └── page.tsx            # トリップ詳細（メイン画面）
-│   └── invite/
-│       └── [code]/
-│           └── page.tsx            # 招待リンク受理
 ├── components/
-│   ├── ui/                         # shadcn/ui コンポーネント
 │   ├── timeline/
 │   │   ├── TimelineCard.tsx
 │   │   ├── TimelineList.tsx
@@ -481,22 +469,21 @@ src/
 │   │   └── HotelCompare.tsx
 │   ├── cost/
 │   │   └── CostSummary.tsx
-│   ├── trip/
-│   │   ├── TripHeader.tsx
-│   │   └── TripTabs.tsx
-│   └── auth/
-│       └── AuthForm.tsx
+│   └── trip/
+│       ├── TripHeader.tsx
+│       └── TripTabs.tsx
 ├── lib/
 │   ├── firebase.ts                 # Firebase 初期化（auth, db エクスポート）
+│   ├── theme.ts                    # MUI テーマ設定
 │   ├── types.ts                    # 型定義
-│   ├── constants.ts                # カラー定数
+│   ├── constants.ts                # 定数
 │   └── seed-data.ts                # 初期データ定数
 ├── hooks/
 │   ├── useAuth.ts                  # Firebase Auth 状態管理
-│   ├── useTimeline.ts              # タイムラインの CRUD + onSnapshot
-│   ├── useChecklist.ts             # チェックリストの CRUD + onSnapshot
-│   ├── useHotels.ts                # ホテル比較の CRUD + onSnapshot
-│   ├── useCosts.ts                 # 費用サマリーの CRUD + onSnapshot
+│   ├── useTimeline.ts              # タイムラインの CRUD + getDocs + refetch
+│   ├── useChecklist.ts             # チェックリストの CRUD + getDocs + refetch
+│   ├── useHotels.ts                # ホテル比較の CRUD + getDocs + refetch
+│   ├── useCosts.ts                 # 費用サマリーの CRUD + getDocs + refetch
 │   └── useTrip.ts                  # トリップ情報の取得・更新
 ├── contexts/
 │   └── AuthContext.tsx              # Firebase Auth の Context Provider
@@ -508,31 +495,31 @@ src/
 ## 11. 開発フェーズ
 
 ### Phase 1: 基盤構築
-- [ ] Next.js + TypeScript + Tailwind CSS プロジェクト初期化 (`pnpm create next-app`)
-- [ ] Firebase プロジェクト作成（コンソール）
-- [ ] `firebase.ts` 初期化ファイル作成
-- [ ] Firebase Authentication 設定（メール/パスワード有効化）
-- [ ] AuthContext + useAuth フック実装
-- [ ] ログイン / サインアップ画面実装
-- [ ] 認証ガード（未認証ユーザーのリダイレクト）
+- [x] Next.js + TypeScript
+- [x] Firebase プロジェクト作成（コンソール）
+- [x] `firebase.ts` 初期化ファイル作成
+- [x] Firebase Authentication 設定（メール/パスワード有効化）
+- [x] AuthContext + useAuth フック実装
+- [x] ログイン / サインアップ画面実装
+- [x] 認証ガード（未認証ユーザーのリダイレクト）
 
 ### Phase 2: コア機能
-- [ ] トリップ作成（+ `writeBatch` による初期データ自動挿入）
-- [ ] トリップ一覧表示
-- [ ] タイムライン CRUD + インライン編集 + `onSnapshot` リアルタイム同期
-- [ ] チェックリスト CRUD + `onSnapshot` リアルタイム同期
-- [ ] TripHeader（旅行日編集、カウントダウン、進捗サマリー）
-- [ ] タブ切り替え（タイムライン / 予約チェック）
+- [x] トリップ作成（+ `writeBatch` による初期データ自動挿入）
+- [x] トリップ一覧表示
+- [x] タイムライン CRUD + インライン編集 + `getDocs` + refetch
+- [x] チェックリスト CRUD + `getDocs` + refetch
+- [x] TripHeader（旅行日編集、カウントダウン、進捗サマリー）
+- [x] タブ切り替え（タイムライン / 予約チェック）
 
 ### Phase 3: 追加機能
-- [ ] ホテル比較テーブル CRUD
-- [ ] 費用サマリー CRUD + 合計自動計算
-- [ ] 招待リンク機能（inviteCode 生成 + 参加フロー）
-- [ ] Firestore セキュリティルールのデプロイ
+- [x] ホテル比較テーブル CRUD
+- [x] 費用サマリー CRUD + 合計自動計算
+- [x] 招待リンク機能（inviteCode 生成 + 参加フロー）
+- [x] Firestore セキュリティルールのデプロイ
 
 ### Phase 4: 仕上げ
-- [ ] レスポンシブ対応（モバイルファースト）
-- [ ] デザイン調整（プロトタイプ `disney-sea-planner.jsx` 準拠）
+- [x] レスポンシブ対応（モバイルファースト）
+- [x] デザイン調整（プロトタイプ `disney-sea-planner.jsx` 準拠）
 - [ ] Vercel デプロイ + Firebase 環境変数設定
 - [ ] PWA 対応（nice to have）
 
@@ -548,9 +535,9 @@ src/
 ## 13. 注意事項
 
 - スマートフォンでの操作性を最優先に設計すること
-- `onSnapshot` のサブスクリプションは `useEffect` の return で必ず `unsubscribe()` すること
+- CRUD操作後は必ず `refetch()` で最新データを再取得すること
 - Firestore セキュリティルールを必ず設定し、`memberIds` に含まれないユーザーのアクセスを拒否すること
-- 楽観的更新（Optimistic Update）を採用し、UIの応答性を確保すること（`onSnapshot` が自動でUIを更新するため、基本的には Firestore への書き込みだけで良い）
+- CRUD操作はFirestoreへの書き込み後にrefetchでUI更新する設計とすること
 - 日本語UIで統一（英語ラベルはデザインアクセントとしてのみ使用）
 - Firestore の書き込みは可能な限り `writeBatch` でまとめて実行すること（初期データ挿入時など）
-- Next.js App Router 使用時、Firebase SDK はクライアントコンポーネント（`"use client"`）内でのみ使用すること
+- Next.js Pages Router を使用し、Firebase SDK はクライアントサイドでのみ使用すること
