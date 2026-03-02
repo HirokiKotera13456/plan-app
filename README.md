@@ -1,40 +1,119 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/pages/api-reference/create-next-app).
+# Sea Trip Planner
 
-## Getting Started
+カップル2人でディズニーシー旅行を共同で計画・管理するためのWebアプリ。
 
-First, run the development server:
+## 技術スタック
+
+- **フロントエンド**: Next.js (Pages Router) + TypeScript
+- **UI**: MUI (Material UI) + Emotion
+- **バックエンド/DB**: Firebase (Firestore + Authentication)
+- **デプロイ**: Firebase Hosting
+
+## セットアップ
+
+### 1. 依存パッケージのインストール
+
+```bash
+npm install
+```
+
+### 2. 環境変数の設定
+
+`.env.local` を作成し、Firebase の設定値を入力：
+
+```
+NEXT_PUBLIC_FIREBASE_API_KEY=your_api_key
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your_project.firebasestorage.app
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
+NEXT_PUBLIC_FIREBASE_APP_ID=your_app_id
+NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID=your_measurement_id
+```
+
+Firebase コンソール > プロジェクト設定 > マイアプリ から取得できます。
+
+### 3. Firebase プロジェクトの準備
+
+Firebase コンソールで以下を有効化してください：
+
+- **Authentication** > メール/パスワード認証を有効化
+- **Firestore Database** > データベースを作成
+
+### 4. 開発サーバーの起動
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+http://localhost:3000 でアクセスできます。
 
-You can start editing the page by modifying `pages/index.tsx`. The page auto-updates as you edit the file.
+## アプリの使い方
 
-[API routes](https://nextjs.org/docs/pages/building-your-application/routing/api-routes) can be accessed on [http://localhost:3000/api/hello](http://localhost:3000/api/hello). This endpoint can be edited in `pages/api/hello.ts`.
+### 初回利用（1人目）
 
-The `pages/api` directory is mapped to `/api/*`. Files in this directory are treated as [API routes](https://nextjs.org/docs/pages/building-your-application/routing/api-routes) instead of React pages.
+1. `/login` でメールアドレスとパスワードでサインアップ
+2. トリップ一覧画面で「新しいトリップを作成」をタップ
+3. 旅行名と旅行日を入力して作成
+4. タイムライン・チェックリスト・ホテル比較・費用サマリーの初期データが自動で挿入される
 
-This project uses [`next/font`](https://nextjs.org/docs/pages/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 2人目の招待
 
-## Learn More
+1. トリップ詳細画面のヘッダーにある共有リンクをコピー
+2. 2人目に招待リンク（`/invite/[code]`）を送る
+3. 2人目がリンクを開いてサインアップ/ログインすると、トリップに参加できる
 
-To learn more about Next.js, take a look at the following resources:
+### 主な機能
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn-pages-router) - an interactive Next.js tutorial.
+| タブ | 機能 |
+|------|------|
+| **タイムライン** | 当日のスケジュール管理。開始/終了時刻、タイトル、カテゴリ等をインライン編集。完了チェック付き |
+| **予約チェック** | チェックリスト（予約管理）、ホテル比較テーブル、費用サマリーをまとめて表示 |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## デプロイ
 
-## Deploy on Vercel
+### Firebase CLI のインストール
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+npm install -g firebase-tools
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/pages/building-your-application/deploying) for more details.
+### ログインとデプロイ
+
+```bash
+# Firebase にログイン
+firebase login
+
+# Hosting + Firestore ルールをまとめてデプロイ
+npm run deploy
+
+# 個別デプロイも可能
+firebase deploy --only hosting
+firebase deploy --only firestore:rules
+```
+
+## npm スクリプト
+
+| コマンド | 説明 |
+|---------|------|
+| `npm run dev` | 開発サーバー起動 |
+| `npm run build` | 静的エクスポート（`out/` に出力） |
+| `npm run lint` | ESLint 実行 |
+| `npm run deploy` | ビルド + Firebase デプロイ |
+
+## プロジェクト構成
+
+```
+pages/
+  _app.tsx           # ThemeProvider + AuthProvider
+  index.tsx          # トリップ一覧
+  login.tsx          # 認証画面
+  trip/[id].tsx      # トリップ詳細（メイン画面）
+  invite/[code].tsx  # 招待リンク受理
+src/
+  components/        # UI コンポーネント
+  hooks/             # カスタムフック (useTimeline, useChecklist 等)
+  contexts/          # AuthContext
+  lib/               # Firebase 初期化、テーマ、型定義、定数
+  firestore.rules    # Firestore セキュリティルール
+```
